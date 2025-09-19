@@ -93,7 +93,7 @@ for i, name in ipairs(sectionNames) do
 end
 sectionFrames["Main"].Visible = true
 
--- Close Button
+-- Close Button (we'll connect this to toggleHub after toggleHub exists)
 local closeButton = Instance.new("TextButton", mainFrame)
 closeButton.Size = UDim2.new(0, 25, 0, 25)
 closeButton.Position = UDim2.new(1, -30, 0, 5)
@@ -102,17 +102,6 @@ closeButton.Text = "X"
 closeButton.TextColor3 = Color3.fromRGB(170, 0, 255)
 closeButton.Font = Enum.Font.GothamBold
 closeButton.TextSize = 16
-closeButton.MouseButton1Click:Connect(function()
-	mainFrame.Visible = false
-end)
-
--- Toggle GUI with Right Ctrl
-UIS.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	if input.KeyCode == Enum.KeyCode.RightControl then
-		mainFrame.Visible = not mainFrame.Visible
-	end
-end)
 
 ------------------------------------------------
 -- AIMBOT SECTION
@@ -120,7 +109,6 @@ end)
 local aimbotEnabled = false
 local rightClickHeld = false
 
--- Toggle button for Aimbot
 local aimbotButton = Instance.new("TextButton", sectionFrames["Main"])
 aimbotButton.Size = UDim2.new(0, 120, 0, 40)
 aimbotButton.Position = UDim2.new(0, 20, 0, 80)
@@ -135,7 +123,6 @@ aimbotButton.MouseButton1Click:Connect(function()
 	aimbotButton.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF")
 end)
 
--- Function to get nearest player head
 local function getNearestPlayer()
 	local closestPlayer, closestDist = nil, math.huge
 	for _, plr in pairs(Players:GetPlayers()) do
@@ -154,7 +141,7 @@ local function getNearestPlayer()
 	return closestPlayer
 end
 
--- Detect right mouse
+-- Right click detection for Aimbot
 UIS.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then -- Right click
@@ -167,12 +154,174 @@ UIS.InputEnded:Connect(function(input, gpe)
 	end
 end)
 
--- Update loop
+-- Aimbot update loop
 RunService.RenderStepped:Connect(function()
 	if aimbotEnabled and rightClickHeld then
 		local target = getNearestPlayer()
 		if target then
 			camera.CFrame = CFrame.new(camera.CFrame.Position, target.Position)
+		end
+	end
+end)
+
+------------------------------------------------
+-- VISUALS / ESP SECTION
+------------------------------------------------
+local espEnabled = false
+local highlights = {}
+
+local function createHighlightForCharacter(plr, character)
+	if not character then return end
+	if highlights[plr] and highlights[plr].Parent then return end
+	local hl = Instance.new("Highlight")
+	hl.Name = "KillerHubESP"
+	hl.Adornee = character
+	hl.Parent = workspace -- parent to workspace so it renders reliably
+	hl.FillTransparency = 1
+	hl.OutlineTransparency = 0
+	hl.OutlineColor = Color3.fromRGB(170, 0, 255)
+	hl.Enabled = espEnabled
+	highlights[plr] = hl
+end
+
+local function removeHighlightForPlayer(plr)
+	local hl = highlights[plr]
+	if hl then
+		pcall(function() hl:Destroy() end)
+		highlights[plr] = nil
+	end
+end
+
+for _, plr in pairs(Players:GetPlayers()) do
+	if plr ~= player then
+		if plr.Character then
+			createHighlightForCharacter(plr, plr.Character)
+		end
+		plr.CharacterAdded:Connect(function(char)
+			wait(0.1)
+			createHighlightForCharacter(plr, char)
+		end)
+	end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+	if plr == player then return end
+	plr.CharacterAdded:Connect(function(char)
+		wait(0.1)
+		createHighlightForCharacter(plr, char)
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+	removeHighlightForPlayer(plr)
+end)
+
+-- ESP Toggle button in Visuals section
+local visualsFrame = sectionFrames["Visuals"]
+local espButton = Instance.new("TextButton", visualsFrame)
+espButton.Size = UDim2.new(0, 140, 0, 36)
+espButton.Position = UDim2.new(0, 20, 0, 80)
+espButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+espButton.TextColor3 = Color3.fromRGB(170, 0, 255)
+espButton.Font = Enum.Font.GothamBold
+espButton.TextSize = 14
+espButton.Text = "ESP: OFF"
+
+espButton.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	espButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+	for plr, hl in pairs(highlights) do
+		if hl and hl.Parent then
+			hl.Enabled = espEnabled
+		elseif espEnabled and plr.Character then
+			createHighlightForCharacter(plr, plr.Character)
+		end
+	end
+	if not espEnabled then
+		for plr, hl in pairs(highlights) do
+			if hl and hl.Parent then
+				pcall(function() hl:Destroy() end)
+			end
+			highlights[plr] = nil
+		end
+	end
+end)
+
+-- optional: distance-based ESP visibility
+local maxESPDistance = 200
+RunService.RenderStepped:Connect(function()
+	if not espEnabled then return end
+	for plr, hl in pairs(highlights) do
+		if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and hl and hl.Parent then
+			local hrp = plr.Character.HumanoidRootPart
+			local dist = (hrp.Position - camera.CFrame.Position).Magnitude
+			hl.Enabled = espEnabled and dist <= maxESPDistance
+		end
+	end
+end)
+
+------------------------------------------------
+-- NOTIFICATION SYSTEM + UNIFIED TOGGLE
+------------------------------------------------
+local notificationFrame = Instance.new("Frame", gui)
+notificationFrame.Size = UDim2.new(0, 220, 0, 50)
+notificationFrame.Position = UDim2.new(1, -240, 1, -70) -- bottom right corner
+notificationFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+notificationFrame.BorderSizePixel = 0
+notificationFrame.Visible = false
+Instance.new("UICorner", notificationFrame).CornerRadius = UDim.new(0, 8)
+notificationFrame.ClipsDescendants = true
+
+local notifLabel = Instance.new("TextLabel", notificationFrame)
+notifLabel.Size = UDim2.new(1, -10, 1, 0)
+notifLabel.Position = UDim2.new(0, 5, 0, 0)
+notifLabel.BackgroundTransparency = 1
+notifLabel.Text = "Press Ctrl to open again"
+notifLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
+notifLabel.Font = Enum.Font.GothamBold
+notifLabel.TextSize = 14
+notifLabel.TextWrapped = true
+notifLabel.TextXAlignment = Enum.TextXAlignment.Center
+notifLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+-- animate show/hide
+local function showNotification()
+	notificationFrame.Visible = true
+	notificationFrame.Position = UDim2.new(1, -240, 1, -20)
+	TweenService:Create(notificationFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Position = UDim2.new(1, -240, 1, -70)
+	}):Play()
+end
+
+local function hideNotification()
+	TweenService:Create(notificationFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		Position = UDim2.new(1, -240, 1, 20)
+	}):Play()
+	task.delay(0.35, function()
+		notificationFrame.Visible = false
+	end)
+end
+
+-- unified toggle function (supports LeftCtrl and RightCtrl)
+local function toggleHub()
+	mainFrame.Visible = not mainFrame.Visible
+	if mainFrame.Visible then
+		hideNotification()
+	else
+		showNotification()
+	end
+end
+
+-- connect close button to unified toggle
+closeButton.MouseButton1Click:Connect(toggleHub)
+
+-- keyboard toggle: accept LeftCtrl or RightCtrl
+UIS.InputBegan:Connect(function(input, gpe)
+	-- don't toggle if the event was already processed by the game UI (e.g., typing in chat)
+	if gpe then return end
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
+			toggleHub()
 		end
 	end
 end)
